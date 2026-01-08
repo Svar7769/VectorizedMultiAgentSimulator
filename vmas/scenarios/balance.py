@@ -252,6 +252,75 @@ class Scenario(BaseScenario):
             ],
             dim=-1,
         )
+    
+    def observation_from_pos(self, pos: torch.Tensor, env_index: int = None):
+        """
+        Get observation from a given position for balance scenario.
+        
+        Args:
+            pos: Position tensor of shape [batch_size, 2] or [2]
+            env_index: Index of the environment (optional)
+            
+        Returns:
+            Observation tensor as if an agent were at the given position
+        """
+        # Ensure pos has correct shape
+        if pos.dim() == 1:
+            pos = pos.unsqueeze(0)  # [2] -> [1, 2]
+        
+        batch_size = pos.shape[0]
+        
+        # Get states for the specified environment
+        if env_index is None:
+            package_pos = self.package.state.pos[0].unsqueeze(0)  # [1, 2]
+            package_vel = self.package.state.vel[0].unsqueeze(0)  # [1, 2]
+            line_pos = self.line.state.pos[0].unsqueeze(0)  # [1, 2]
+            line_vel = self.line.state.vel[0].unsqueeze(0)  # [1, 2]
+            line_ang_vel = self.line.state.ang_vel[0].unsqueeze(0)  # [1, 1]
+            line_rot = self.line.state.rot[0].unsqueeze(0)  # [1, 1]
+            goal_pos = self.package.goal.state.pos[0].unsqueeze(0)  # [1, 2]
+        else:
+            package_pos = self.package.state.pos[env_index].unsqueeze(0)  # [1, 2]
+            package_vel = self.package.state.vel[env_index].unsqueeze(0)  # [1, 2]
+            line_pos = self.line.state.pos[env_index].unsqueeze(0)  # [1, 2]
+            line_vel = self.line.state.vel[env_index].unsqueeze(0)  # [1, 2]
+            line_ang_vel = self.line.state.ang_vel[env_index].unsqueeze(0)  # [1, 1]
+            line_rot = self.line.state.rot[env_index].unsqueeze(0)  # [1, 1]
+            goal_pos = self.package.goal.state.pos[env_index].unsqueeze(0)  # [1, 2]
+        
+        # Expand to match batch size
+        package_pos = package_pos.expand(batch_size, -1)
+        package_vel = package_vel.expand(batch_size, -1)
+        line_pos = line_pos.expand(batch_size, -1)
+        line_vel = line_vel.expand(batch_size, -1)
+        line_ang_vel = line_ang_vel.expand(batch_size, -1)
+        line_rot = line_rot.expand(batch_size, -1)
+        goal_pos = goal_pos.expand(batch_size, -1)
+        
+        # Create zero velocity for the hypothetical agent at pos
+        agent_vel = torch.zeros_like(pos)
+        
+        # Match the structure of the observation method:
+        # [agent.state.pos, agent.state.vel, 
+        #  agent.state.pos - package.state.pos,
+        #  agent.state.pos - line.state.pos,
+        #  package.state.pos - goal.state.pos,
+        #  package.state.vel, line.state.vel, line.state.ang_vel,
+        #  line.state.rot % pi]
+        return torch.cat(
+            [
+                pos,  # agent position
+                agent_vel,  # agent velocity (zero for static query point)
+                pos - package_pos,  # relative position to package
+                pos - line_pos,  # relative position to line
+                package_pos - goal_pos,  # package to goal
+                package_vel,  # package velocity
+                line_vel,  # line velocity
+                line_ang_vel,  # line angular velocity
+                line_rot % torch.pi,  # line rotation
+            ],
+            dim=-1,
+        )
 
     def done(self):
         return self.on_the_ground + self.world.is_overlapping(
