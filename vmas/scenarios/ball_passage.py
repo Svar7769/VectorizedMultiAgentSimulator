@@ -282,6 +282,61 @@ class Scenario(BaseScenario):
             ],
             dim=-1,
         )
+    
+    def observation_from_pos(self, pos: torch.Tensor, env_index: int = None):
+        """
+        Get observation from a given position for ball passage scenario.
+        
+        Args:
+            pos: Position tensor of shape [batch_size, 2] or [2]
+            env_index: Index of the environment (optional)
+            
+        Returns:
+            Observation tensor as if an agent were at the given position
+        """
+        # Ensure pos has correct shape [batch_size, 2]
+        if pos.dim() == 1:
+            pos = pos.unsqueeze(0)
+        
+        batch_size = pos.shape[0]
+        device = self.world.device
+
+        # Helper to get the correct state slice
+        def get_state(entity_state_attr):
+            if env_index is None:
+                # If no index, we assume we want the first env or the whole batch
+                # To match pos batch_size, we take the first and expand
+                return entity_state_attr[0].unsqueeze(0).expand(batch_size, -1)
+            return entity_state_attr[env_index].unsqueeze(0).expand(batch_size, -1)
+
+        # Extract states
+        ball_pos = get_state(self.ball.state.pos)
+        goal_pos = get_state(self.goal.state.pos)
+        
+        # Hypothetical agent velocity is zero for a static position query
+        agent_vel = torch.zeros_like(pos)
+
+        # Get positions of all "open" passages (where collide is False)
+        # Note: In VMAS, the list of passages is the same across batch dims, 
+        # but their positions vary per env_index
+        passage_obs = []
+        for passage in self.passages:
+            if not passage.collide:
+                p_pos = get_state(passage.state.pos)
+                passage_obs.append(pos - p_pos)
+
+        # Match the structure of Scenario.observation():
+        # [pos, vel, pos - goal, pos - ball, *(pos - open_passages)]
+        return torch.cat(
+            [
+                pos,
+                agent_vel,
+                pos - goal_pos,
+                pos - ball_pos,
+                *passage_obs,
+            ],
+            dim=-1,
+        )
 
     def done(self):
         return (
