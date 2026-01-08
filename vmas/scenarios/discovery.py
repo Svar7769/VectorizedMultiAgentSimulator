@@ -250,6 +250,47 @@ class Scenario(BaseScenario):
             "targets_covered": self.covered_targets.sum(-1),
         }
         return info
+    
+    def observation_from_pos(self, pos: torch.Tensor, env_index: int = None):
+        if pos.dim() == 1:
+            pos = pos.unsqueeze(0)
+        
+        pos = pos.to(torch.float32)
+        batch_size = pos.shape[0]
+
+        def get_batch_state(entity_list):
+            if env_index is None:
+                return torch.stack([e.state.pos[0] for e in entity_list], dim=0).to(torch.float32)
+            return torch.stack([e.state.pos[env_index] for e in entity_list], dim=0).to(torch.float32)
+
+        target_positions = get_batch_state(self._targets) 
+        
+        # 1. Compute distances
+        # pos is [B, 2], target_positions is [N, 2]
+        # dists becomes [B, N]
+        dists = torch.cdist(pos, target_positions)
+        
+        # 2. Get min distance to any target for each probe point
+        # min_dist_to_target becomes [B]
+        min_dist_to_target = torch.min(dists, dim=-1)[0]
+        min_dist_to_target = min_dist_to_target.clamp(max=self._lidar_range)
+        
+        # 3. Correct the expansion
+        # We ensure it is [B, 1] then expand to [B, 15]
+        lidar_approx = min_dist_to_target.view(batch_size, 1).expand(batch_size, 15)
+
+        agent_vel = torch.zeros_like(pos)
+
+        # Match Scenario.observation structure: [pos, vel, pos, lidar]
+        return torch.cat(
+            [
+                pos,
+                agent_vel,
+                pos,
+                lidar_approx,
+            ],
+            dim=-1,
+        )
 
     def done(self):
         return self.all_time_covered_targets.all(dim=-1)

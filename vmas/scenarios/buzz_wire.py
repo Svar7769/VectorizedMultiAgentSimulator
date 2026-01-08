@@ -244,6 +244,48 @@ class Scenario(BaseScenario):
             ],
             dim=-1,
         )
+    
+    def observation_from_pos(self, pos: torch.Tensor, env_index: int = None):
+        """
+        Get observation from a given position for the buzz wire scenario.
+        
+        Args:
+            pos: Position tensor of shape [batch_size, 2] or [2]
+            env_index: Index of the environment (optional)
+            
+        Returns:
+            Observation tensor as if an agent were at the given position
+        """
+        # Ensure pos has correct shape [batch_size, 2]
+        if pos.dim() == 1:
+            pos = pos.unsqueeze(0)
+        
+        batch_size = pos.shape[0]
+
+        # Helper to get the correct state slice (single env vs whole batch)
+        def get_state(entity_state_attr):
+            if env_index is None:
+                # Use the first environment's state and expand to match batch_size
+                return entity_state_attr[0].unsqueeze(0).expand(batch_size, -1)
+            # Use the specific environment's state
+            return entity_state_attr[env_index].unsqueeze(0).expand(batch_size, -1)
+
+        # Extract goal state
+        goal_pos = get_state(self.goal.state.pos)
+        
+        # Hypothetical agent velocity is zero for a static position query
+        agent_vel = torch.zeros_like(pos)
+
+        # Match the structure of Scenario.observation():
+        # [agent.pos, agent.vel, agent.pos - goal.pos]
+        return torch.cat(
+            [
+                pos,             # agent.state.pos
+                agent_vel,       # agent.state.vel
+                pos - goal_pos,  # agent.state.pos - goal.state.pos
+            ],
+            dim=-1,
+        )
 
     def done(self):
         return (
