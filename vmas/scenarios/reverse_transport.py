@@ -200,6 +200,54 @@ class Scenario(BaseScenario):
             ],
             dim=-1,
         )
+    def observation_from_pos(self, pos: torch.Tensor, env_index: int = None):
+        """
+        Get observation from a given position for reverse_transport scenario.
+        
+        Args:
+            pos: Position tensor of shape [batch_size, 2] or [2]
+            env_index: Index of the environment (optional)
+            
+        Returns:
+            Observation tensor as if an agent were at the given position
+        """
+        # Ensure pos has correct shape
+        if pos.dim() == 1:
+            pos = pos.unsqueeze(0)  # [2] -> [1, 2]
+        
+        batch_size = pos.shape[0]
+        
+        # Get package state for the specified environment
+        if env_index is None:
+            package_pos = self.package.state.pos[0].unsqueeze(0)  # [1, 2]
+            package_vel = self.package.state.vel[0].unsqueeze(0)  # [1, 2]
+            goal_pos = self.package.goal.state.pos[0].unsqueeze(0)  # [1, 2]
+        else:
+            package_pos = self.package.state.pos[env_index].unsqueeze(0)  # [1, 2]
+            package_vel = self.package.state.vel[env_index].unsqueeze(0)  # [1, 2]
+            goal_pos = self.package.goal.state.pos[env_index].unsqueeze(0)  # [1, 2]
+        
+        # Expand to match batch size
+        package_pos = package_pos.expand(batch_size, -1)
+        package_vel = package_vel.expand(batch_size, -1)
+        goal_pos = goal_pos.expand(batch_size, -1)
+        
+        # Create zero velocity for the hypothetical agent at pos
+        agent_vel = torch.zeros_like(pos)
+        
+        # Match the structure of the observation method:
+        # [agent.state.pos, agent.state.vel, package.state.vel, 
+        #  package.state.pos - agent.state.pos, package.state.pos - goal.state.pos]
+        return torch.cat(
+            [
+                pos,  # agent position
+                agent_vel,  # agent velocity (zero for static query point)
+                package_vel,  # package velocity
+                package_pos - pos,  # relative position to package
+                package_pos - goal_pos,  # package to goal
+            ],
+            dim=-1,
+        )
 
     def done(self):
         return self.package.on_goal
