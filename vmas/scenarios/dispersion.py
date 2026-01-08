@@ -149,6 +149,59 @@ class Scenario(BaseScenario):
             dim=-1,
         )
 
+    def observation_from_pos(self, pos: torch.Tensor, env_index: int = None):
+        """
+        Get observation from a given position.
+        
+        Args:
+            pos: Position tensor of shape [batch_size, 2] or [2]
+            env_index: Index of the environment (optional)
+            
+        Returns:
+            Observation tensor as if an agent were at the given position
+        """
+        # Ensure pos has correct shape
+        if pos.dim() == 1:
+            pos = pos.unsqueeze(0)  # [2] -> [1, 2]
+        
+        batch_size = pos.shape[0]
+        
+        obs = []
+        for landmark in self.world.landmarks:
+            if env_index is None:
+                # Use all environments
+                landmark_pos = landmark.state.pos  # [batch_dim, 2]
+                landmark_eaten = landmark.eaten  # [batch_dim]
+                
+                # If pos batch doesn't match world batch_dim, expand landmark data
+                if batch_size != landmark_pos.shape[0]:
+                    # Assume we want first env if sizes don't match
+                    landmark_pos = landmark_pos[0:1].expand(batch_size, -1)
+                    landmark_eaten = landmark_eaten[0:1].expand(batch_size)
+            else:
+                # Use specific environment
+                landmark_pos = landmark.state.pos[env_index].unsqueeze(0)  # [1, 2]
+                landmark_eaten = landmark.eaten[env_index].unsqueeze(0)  # [1]
+                
+                # Expand to match batch size
+                landmark_pos = landmark_pos.expand(batch_size, -1)  # [batch_size, 2]
+                landmark_eaten = landmark_eaten.expand(batch_size)  # [batch_size]
+            
+            # Compute relative position from given pos
+            relative_pos = landmark_pos - pos  # [batch_size, 2]
+            
+            obs.append(
+                torch.cat(
+                    [
+                        relative_pos,
+                        landmark_eaten.to(torch.int).unsqueeze(-1),
+                    ],
+                    dim=-1,
+                )
+            )
+        
+        return torch.cat(obs, dim=-1)
+
     def done(self):
         return torch.all(
             torch.stack(
