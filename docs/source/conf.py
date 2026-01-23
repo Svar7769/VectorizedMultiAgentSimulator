@@ -1,6 +1,3 @@
-#  Copyright (c) 2024.
-#  ProrokLab (https://www.proroklab.org/)
-#  All rights reserved.
 
 # Configuration file for the Sphinx documentation builder.
 import os.path as osp

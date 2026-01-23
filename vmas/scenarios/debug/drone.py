@@ -1,6 +1,3 @@
-#  Copyright (c) 2024.
-#  ProrokLab (https://www.proroklab.org/)
-#  All rights reserved.
 
 import typing
 from typing import List

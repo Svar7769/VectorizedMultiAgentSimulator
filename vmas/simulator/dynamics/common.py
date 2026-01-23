@@ -1,6 +1,3 @@
-#  Copyright (c) 2024.
-#  ProrokLab (https://www.proroklab.org/)
-#  All rights reserved.
 import abc
 from abc import ABC
 from typing import Union
