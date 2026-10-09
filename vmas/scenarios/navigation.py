@@ -244,6 +244,8 @@ class Scenario(BaseScenario):
         return agent.pos_rew
 
     def observation(self, agent: Agent):
+        if self.observe_all_goals and not self.collisions:
+            return self.observation_from_pos(agent.state.pos)
         goal_poses = []
         if self.observe_all_goals:
             for a in self.world.agents:
@@ -251,11 +253,11 @@ class Scenario(BaseScenario):
         else:
             goal_poses.append(agent.state.pos - agent.goal.state.pos)
         return torch.cat(
-            [
-                agent.state.pos,
-                agent.state.vel,
-            ]
-            + goal_poses
+            # [
+            # agent.state.pos,
+            #     agent.state.vel,
+            # ]
+            goal_poses
             + (
                 [agent.sensors[0]._max_range - agent.sensors[0].measure()]
                 if self.collisions
@@ -263,6 +265,19 @@ class Scenario(BaseScenario):
             ),
             dim=-1,
         )
+
+    def observation_from_pos(self, pos: Tensor, env_index: typing.Optional[int] = None):
+        assert self.observe_all_goals and not self.collisions
+        goal_poses = []
+        if self.observe_all_goals:
+            for a in self.world.agents:
+                if env_index is None:
+                    goal_poses.append(pos - a.goal.state.pos)
+                else:
+                    goal_poses.append(
+                        pos - a.goal.state.pos[env_index].unsqueeze(0).expand(pos.shape)
+                    )
+        return torch.cat(goal_poses, dim=-1)
 
     def done(self):
         return torch.stack(
