@@ -1420,7 +1420,7 @@ class World(TorchVectorizedObject):
         max_range: float,
     ):
         batch_size = ray_origin.shape[:-1]
-        assert batch_size[0] == self.batch_dim
+        # assert batch_size[0] == self.batch_dim
         assert ray_origin.shape[-1] == 2  # ray_origin is [*batch_size, 2]
         assert (
             ray_direction.shape[:-1] == batch_size

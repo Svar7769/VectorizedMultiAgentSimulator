@@ -250,6 +250,56 @@ class Scenario(BaseScenario):
             dim=-1,
         )
 
+    def observation_from_pos( self, pos: Tensor, env_index: int = None, agent_index: int = 0 ):
+        env_index = 0 if env_index is None else env_index
+        agent = self.world.agents[agent_index]
+        pos = pos.to(
+            device=self.world.device, dtype=agent.state.pos.dtype
+        ).reshape(-1, 2)
+        n_points = pos.shape[0]
+
+        observations = [pos, torch.zeros_like(pos)]
+
+        for sensor in agent.sensors:
+            entities = [
+                entity
+                for entity in self.world.entities
+                if entity is not agent and sensor.entity_filter(entity)
+            ]
+
+            if not entities:
+                measurements = pos.new_full(
+                    (n_points, sensor._angles.shape[-1]),
+                    sensor._max_range,
+                )
+            else:
+                sphere_pos = torch.stack(
+                    [entity.state.pos[env_index] for entity in entities]
+                ).unsqueeze(0).expand(n_points, -1, -1)
+
+                sphere_radius = pos.new_tensor(
+                    [entity.shape.radius for entity in entities]
+                ).unsqueeze(0).expand(n_points, -1)
+
+                angles = (
+                    sensor._angles[env_index] + agent.state.rot[env_index]
+                ).unsqueeze(0).expand(n_points, -1)
+
+                distances = self.world._cast_rays_to_sphere(
+                    sphere_pos,
+                    sphere_radius,
+                    pos,
+                    angles,
+                    sensor._max_range,
+                )
+                measurements = distances.min(dim=-2).values.clamp(
+                    max=sensor._max_range
+                )
+
+            observations.append(measurements)
+
+        return torch.cat(observations, dim=-1)
+
     def info(self, agent: Agent) -> Dict[str, Tensor]:
         info = {
             "covering_reward": (
