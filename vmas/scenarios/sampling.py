@@ -279,12 +279,20 @@ class Scenario(BaseScenario):
         return self.sampling_rew if self.shared_rew else agent.sample
 
     def observation(self, agent: Agent) -> Tensor:
-        observations = [
-            agent.state.pos,
-            agent.state.vel,
-            agent.sensors[0].measure(),
-        ]
+        observations = self.observation_from_pos(agent.state.pos)
 
+        if self.collisions:
+            observations = torch.cat(
+                    [observations, agents.sensors[0].measure()], dim=-1
+            )
+
+        return observations
+
+    def observation_from_pos(self, pos: Tensor, env_index: int = None):
+        if pos.dim() == 1:
+            pos = pos.unsqueeze(0)
+
+        samples = []
         for delta in [
             [self.grid_spacing, 0],
             [-self.grid_spacing, 0],
@@ -295,21 +303,24 @@ class Scenario(BaseScenario):
             [-self.grid_spacing, self.grid_spacing],
             [self.grid_spacing, self.grid_spacing],
         ]:
-            pos = agent.state.pos + torch.tensor(
+            query_pos = pos + torch.tensor(
                 delta,
                 device=self.world.device,
                 dtype=torch.float32,
             )
-            sample = self.sample(
-                pos,
-                update_sampled_flag=False,
-            ).unsqueeze(-1)
-            observations.append(sample)
 
-        return torch.cat(
-            observations,
-            dim=-1,
-        )
+            if env_index is not None:
+                sample = self.sample_single_env(
+                    query_pos, env_index=env_index, norm=self.norm
+                )
+            else:
+                sample = self.sample(
+                    query_pos, update_sampled_flag=False, norm=self.norm
+                )
+
+            samples.append(sample.unsqueeze(-1))
+
+        return torch.cat([pos] + samples, dim=-1)
 
     def info(self, agent: Agent) -> Dict[str, Tensor]:
         return {"agent_sample": agent.sample}
