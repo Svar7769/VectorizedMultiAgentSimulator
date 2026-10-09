@@ -64,6 +64,21 @@ class Scenario(BaseScenario):
         self.min_collision_distance = 0.005
 
         self.colors = [Color.GREEN, Color.BLUE, Color.RED, Color.GRAY]
+        self.indices_to_rot_angles = {
+            0: torch.pi / 2,
+            1: torch.pi,
+            2: -torch.pi / 2,
+            3: 0,
+        }
+        self.indices_to_rot_angles = {
+            key: torch.full(
+                (batch_dim,),
+                value,
+                device=device,
+                dtype=torch.float,
+            )
+            for key, value in self.indices_to_rot_angles.items()
+        }
 
         # Add agents
         for i in range(self.n_agents):
@@ -71,11 +86,9 @@ class Scenario(BaseScenario):
                 name=f"agent_{i}",
                 rotatable=False,
                 linear_friction=self.linear_friction,
-                shape=(
-                    Sphere(radius=self.agent_radius)
-                    if not self.box_agents
-                    else Box(length=self.agent_box_length, width=self.agent_box_width)
-                ),
+                shape=Sphere(radius=self.agent_radius)
+                if not self.box_agents
+                else Box(length=self.agent_box_length, width=self.agent_box_width),
                 u_range=self.u_range,
                 f_range=self.f_range,
                 render_action=True,
@@ -102,6 +115,14 @@ class Scenario(BaseScenario):
         self.final_rew = self.pos_rew.clone()
 
         return world
+
+    def rotate_vector(self, agent_index, vector, action: bool):
+        return TorchUtils.rotate_vector(
+            vector,
+            self.indices_to_rot_angles[agent_index]
+            if not action
+            else -self.indices_to_rot_angles[agent_index],
+        )
 
     def reset_world_at(self, env_index: int = None):
         for i, agent in enumerate(self.world.agents):
@@ -184,6 +205,9 @@ class Scenario(BaseScenario):
             self.reached_goal[env_index] = False
 
     def process_action(self, agent: Agent):
+        agent.action.u = self.rotate_vector(
+            self.world.agents.index(agent), agent.action.u, action=True
+        )
         # Clamp square to circle
         agent.action.u = TorchUtils.clamp_with_norm(agent.action.u, self.u_range)
 
@@ -225,8 +249,7 @@ class Scenario(BaseScenario):
                 self.pos_rew += a.pos_rew
 
             self.all_goal_reached = torch.all(
-                torch.stack([a.on_goal for a in self.world.agents], dim=-1),
-                dim=-1,
+                torch.stack([a.on_goal for a in self.world.agents], dim=-1), dim=-1
             )
 
             self.final_rew[self.all_goal_reached] = self.final_reward
@@ -267,27 +290,29 @@ class Scenario(BaseScenario):
         )
 
     def observation(self, agent: Agent):
-        observations = [
-            agent.state.pos,
-            agent.state.vel,
+        rel_goal = self.rotate_vector(
+            self.world.agents.index(agent),
             agent.state.pos - agent.goal.state.pos,
-            torch.linalg.vector_norm(
-                agent.state.pos - agent.goal.state.pos,
-                dim=-1,
-            ).unsqueeze(-1),
+            action=False,
+        )
+
+        other_agents = [
+            self.world.agents[(self.world.agents.index(agent) + i) % self.n_agents]
+            for i in (1, 2, 3)
+        ]
+        rel_poses_to_others = [
+            self.rotate_vector(
+                self.world.agents.index(agent),
+                agent.state.pos - a.state.pos,
+                action=False,
+            )
+            for a in other_agents
         ]
 
-        if self.obs_noise > 0:
-            for i, obs in enumerate(observations):
-                noise = torch.zeros(*obs.shape, device=self.world.device,).uniform_(
-                    -self.obs_noise,
-                    self.obs_noise,
-                )
-                observations[i] = obs + noise
-        return torch.cat(
-            observations,
-            dim=-1,
-        )
+        return {
+            "rel_goal": rel_goal,
+            "rel_agents": torch.stack(rel_poses_to_others, dim=-2),
+        }
 
     def info(self, agent: Agent):
         return {
@@ -361,11 +386,9 @@ class Scenario(BaseScenario):
                 landmark.set_pos(
                     torch.tensor(
                         [
-                            (
-                                -self.scenario_length / 2
-                                if i % 2 == 0
-                                else self.scenario_length / 2
-                            ),
+                            -self.scenario_length / 2
+                            if i % 2 == 0
+                            else self.scenario_length / 2,
                             0.0,
                         ],
                         dtype=torch.float32,
@@ -386,11 +409,9 @@ class Scenario(BaseScenario):
                     torch.tensor(
                         [
                             0.0,
-                            (
-                                -self.scenario_length / 2
-                                if i % 2 == 0
-                                else self.scenario_length / 2
-                            ),
+                            -self.scenario_length / 2
+                            if i % 2 == 0
+                            else self.scenario_length / 2,
                         ],
                         dtype=torch.float32,
                         device=self.world.device,
