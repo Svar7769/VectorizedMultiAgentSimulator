@@ -1301,6 +1301,23 @@ class Scenario(BaseScenario):
         )
         return obs
 
+    def observation_from_pos(
+        self, pos: Tensor, env_index: int = None, agent_index: int = 0
+    ):
+        env_index = 0 if env_index is None else env_index
+        agent = self.world.agents[agent_index]
+        pos = pos.to(
+            device=self.world.device, dtype=agent.state.pos.dtype
+        ).reshape(-1, 2)
+
+        return self.observation(
+            agent,
+            agent_pos=pos,
+            agent_vel=torch.zeros_like(pos),
+            agent_force=torch.zeros_like(pos),
+            env_index=env_index,
+        )
+
     def observation_base(
         self,
         agent_pos,
