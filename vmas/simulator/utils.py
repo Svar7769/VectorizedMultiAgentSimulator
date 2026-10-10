@@ -134,7 +134,8 @@ def x_to_rgb_colormap(
 ):
     from matplotlib import cm
 
-    colormap = cm.get_cmap(cmap_name, cmap_res)(range(cmap_res))[:, :-1]
+    from matplotlib import colormaps
+    colormap = colormaps.get_cmap(cmap_name).resampled(cmap_res)(range(cmap_res))[:, :-1]
     if low is None:
         low = np.min(x)
     if high is None:
